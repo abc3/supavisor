@@ -189,4 +189,11 @@ defmodule Supavisor.HandlerHelpers do
         :error
     end
   end
+
+  def addr_from_sock({Supavisor.TISock, socket}) do
+    case ThousandIsland.Socket.peername(socket) do
+      {:ok, {addr, _port}} -> {:ok, addr}
+      _ -> :error
+    end
+  end
 end

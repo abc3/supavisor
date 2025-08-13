@@ -8,8 +8,7 @@ defmodule Supavisor.TenantSupervisor do
 
   def start_link(%{replicas: [%{mode: mode}]} = args)
       when mode in [:transaction, :session] do
-    meta = Supavisor.get_local_server(args.id, mode)
-    name = {:via, :syn, {:tenants, args.id, meta}}
+    name = {:via, :syn, {:tenants, args.id}}
     Supervisor.start_link(__MODULE__, args, name: name)
   end
 

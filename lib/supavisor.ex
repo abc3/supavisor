@@ -354,9 +354,9 @@ defmodule Supavisor do
 
     {pool_size, max_clients} =
       if method == :auth_query do
-        {def_pool_size, def_max_clients}
+        {30, def_max_clients}
       else
-        {pool_size, max_clients}
+        {30, max_clients}
       end
 
     auth = %{
@@ -410,13 +410,7 @@ defmodule Supavisor do
     end
   end
 
-  @spec get_local_server(id, atom) :: map()
-  def get_local_server(id, mode) do
-    host = Application.get_env(:supavisor, :node_host)
-    local_proxy_shards = Application.fetch_env!(:supavisor, :local_proxy_shards)
-    shard = :erlang.phash2(id, local_proxy_shards)
-    %{host: host, port: :ranch.get_port({:pg_proxy_internal, mode, shard})}
-  end
+  # get_local_server/2 no longer used with Thousand Island
 
   @spec count_pools(String.t()) :: non_neg_integer()
   def count_pools(tenant),

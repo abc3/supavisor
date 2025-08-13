@@ -52,41 +52,44 @@ defmodule Supavisor.Application do
 
     local_proxy_shards =
       for shard <- 0..(local_proxy_shards_count - 1), mode <- [:session, :transaction] do
-        {{:pg_proxy_internal, mode, shard}, 0, %{mode: mode, local: true, shard: shard},
-         Supavisor.ClientHandler}
+        name = String.to_atom("pg_proxy_internal_#{mode}_#{shard}")
+        {ThousandIsland,
+         port: 0,
+         handler_module: Supavisor.TIHandler,
+         num_acceptors: String.to_integer(System.get_env("NUM_ACCEPTORS") || "100"),
+         num_connections: 100_000,
+         handler_options: %{mode: mode, local: true, shard: shard},
+         transport_options: [nodelay: true, keepalive: true],
+         supervisor_options: [name: name]}
       end
 
     proxy_ports =
       [
-        {:pg_proxy_transaction, Application.get_env(:supavisor, :proxy_port_transaction),
-         %{mode: :transaction, local: false}, Supavisor.ClientHandler},
-        {:pg_proxy_session, Application.get_env(:supavisor, :proxy_port_session),
-         %{mode: :session, local: false}, Supavisor.ClientHandler},
-        {:pg_proxy, Application.get_env(:supavisor, :proxy_port), %{mode: :proxy, local: false},
-         Supavisor.ClientHandler}
+        {ThousandIsland,
+         port: Application.get_env(:supavisor, :proxy_port_transaction),
+         handler_module: Supavisor.TIHandler,
+         num_acceptors: String.to_integer(System.get_env("NUM_ACCEPTORS") || "100"),
+         num_connections: 100_000,
+         handler_options: %{mode: :transaction, local: false},
+         transport_options: [nodelay: true, keepalive: true],
+         supervisor_options: [name: :pg_proxy_transaction]},
+        {ThousandIsland,
+         port: 4545,
+         handler_module: Supavisor.TIHandler,
+         num_acceptors: String.to_integer(System.get_env("NUM_ACCEPTORS") || "100"),
+         num_connections: 100_000,
+         handler_options: %{mode: :session, local: false},
+         transport_options: [nodelay: true, keepalive: true],
+         supervisor_options: [name: :pg_proxy_session]},
+        {ThousandIsland,
+         port: Application.get_env(:supavisor, :proxy_port),
+         handler_module: Supavisor.TIHandler,
+         num_acceptors: String.to_integer(System.get_env("NUM_ACCEPTORS") || "100"),
+         num_connections: 100_000,
+         handler_options: %{mode: :proxy, local: false},
+         transport_options: [nodelay: true, keepalive: true],
+         supervisor_options: [name: :pg_proxy]}
       ] ++ local_proxy_shards
-
-    for {key, port, opts, handler} <- proxy_ports do
-      case :ranch.start_listener(
-             key,
-             :ranch_tcp,
-             %{
-               max_connections: String.to_integer(System.get_env("MAX_CONNECTIONS") || "75000"),
-               num_acceptors: String.to_integer(System.get_env("NUM_ACCEPTORS") || "100"),
-               socket_opts: [port: port, keepalive: true]
-             },
-             handler,
-             opts
-           ) do
-        {:ok, _ref} ->
-          Logger.notice(
-            "Proxy started #{opts.mode}(local=#{opts.local}) on port #{:ranch.get_port(key)}"
-          )
-
-        error ->
-          Logger.error("Proxy on #{port} not started because of #{inspect(error)}")
-      end
-    end
 
     :syn.set_event_handler(Supavisor.SynHandler)
     :syn.add_node_to_scopes([:tenants, :availability_zone])
@@ -122,10 +125,8 @@ defmodule Supavisor.Application do
         PartitionSupervisor,
         child_spec: DynamicSupervisor, strategy: :one_for_one, name: Supavisor.DynamicSupervisor
       },
-      Supavisor.Vault,
-
-      # Start the Endpoint (http/https)
-      SupavisorWeb.Endpoint
+      Supavisor.Vault
+      # Thousand Island listeners will be appended below
     ]
 
     Logger.warning("metrics_disabled is #{inspect(@metrics_disabled)}")
@@ -136,6 +137,8 @@ defmodule Supavisor.Application do
       else
         children ++ [PromEx, Supavisor.TenantsMetrics, Supavisor.MetricsCleaner]
       end
+
+    children = children ++ proxy_ports ++ [SupavisorWeb.Endpoint]
 
     # start Cachex only if the node uses names, this is necessary for test setup
     children =

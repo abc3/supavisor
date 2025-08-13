@@ -18,37 +18,55 @@ defmodule Supavisor.Monitoring.Telem do
   if @disabled do
     def network_usage(_type, _sock, _id, _stats), do: {:ok, %{recv_oct: 0, send_oct: 0}}
   else
+    def network_usage(type, {Supavisor.TISock, %ThousandIsland.Socket{} = socket}, id, stats) do
+      case ThousandIsland.Socket.getstat(socket) do
+        {:ok, kv} ->
+          take_and_emit(type, kv, id, stats)
+
+        {:error, reason} ->
+          Logger.error("Failed to get TI socket stats: #{inspect(reason)}")
+          {:error, stats}
+      end
+    end
+
     def network_usage(type, {mod, socket}, id, stats) do
       mod = if mod == :ssl, do: :ssl, else: :inet
 
       case mod.getstat(socket, [:recv_oct, :send_oct]) do
         {:ok, [{:recv_oct, recv_oct}, {:send_oct, send_oct}]} ->
-          stats = %{
-            send_oct: send_oct - Map.get(stats, :send_oct, 0),
-            recv_oct: recv_oct - Map.get(stats, :recv_oct, 0)
-          }
-
-          {{ptype, tenant}, user, mode, db_name, search_path} = id
-
-          :telemetry.execute(
-            [:supavisor, type, :network, :stat],
-            stats,
-            %{
-              tenant: tenant,
-              user: user,
-              mode: mode,
-              type: ptype,
-              db_name: db_name,
-              search_path: search_path
-            }
-          )
-
-          {:ok, %{recv_oct: recv_oct, send_oct: send_oct}}
+          take_and_emit(type, [{:recv_oct, recv_oct}, {:send_oct, send_oct}], id, stats)
 
         {:error, reason} ->
           Logger.error("Failed to get socket stats: #{inspect(reason)}")
           {:error, stats}
       end
+    end
+
+    defp take_and_emit(type, kv, id, stats) do
+      recv_oct = Keyword.get(kv, :recv_oct)
+      send_oct = Keyword.get(kv, :send_oct)
+
+      stats = %{
+        send_oct: send_oct - Map.get(stats, :send_oct, 0),
+        recv_oct: recv_oct - Map.get(stats, :recv_oct, 0)
+      }
+
+      {{ptype, tenant}, user, mode, db_name, search_path} = id
+
+      :telemetry.execute(
+        [:supavisor, type, :network, :stat],
+        stats,
+        %{
+          tenant: tenant,
+          user: user,
+          mode: mode,
+          type: ptype,
+          db_name: db_name,
+          search_path: search_path
+        }
+      )
+
+      {:ok, %{recv_oct: recv_oct, send_oct: send_oct}}
     end
   end
 

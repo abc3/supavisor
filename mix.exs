@@ -73,7 +73,7 @@ defmodule Supavisor.MixProject do
       {:syn, "~> 3.3"},
       {:pgo, "~> 0.13"},
       {:rustler, "~> 0.36.1"},
-      {:ranch, "~> 2.0", override: true},
+      {:thousand_island, "~> 1.0"},
 
       # Linting
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

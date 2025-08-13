@@ -43,6 +43,65 @@ defmodule Supavisor.ClientHandler do
   @impl true
   def init(_), do: :ignore
 
+  # Thousand Island entrypoint (no SSL for now)
+  def start_ti(socket, opts) do
+    Process.flag(:trap_exit, true)
+    Helpers.set_max_heap_size(90)
+
+    peer_ip =
+      case Supavisor.TISock.peername(socket) do
+        {:ok, {ip, _port}} -> List.to_string(:inet.ntoa(ip))
+        _ -> "undefined"
+      end
+
+    local = opts[:local] || false
+
+    Logger.metadata(
+      peer_ip: peer_ip,
+      local: local,
+      state: :init
+    )
+
+    sock = {Supavisor.TISock, socket}
+    :ok = HandlerHelpers.setopts(sock, active: true)
+
+    Logger.debug("ClientHandler (TI) is: #{inspect(self())}")
+
+    data = %{
+      id: nil,
+      sock: sock,
+      trans: Supavisor.TISock,
+      db_pid: nil,
+      tenant: nil,
+      user: nil,
+      pool: nil,
+      manager: nil,
+      query_start: nil,
+      timeout: nil,
+      ps: nil,
+      ssl: false,
+      auth_secrets: nil,
+      proxy_type: nil,
+      mode: opts.mode,
+      stats: %{},
+      idle_timeout: 0,
+      db_name: nil,
+      last_query: nil,
+      heartbeat_interval: 0,
+      connection_start: System.monotonic_time(),
+      log_level: nil,
+      auth: %{},
+      tenant_availability_zone: nil,
+      local: local,
+      active_count: 0,
+      peer_ip: peer_ip,
+      app_name: nil,
+      subscribe_retries: 0
+    }
+
+    :gen_statem.enter_loop(__MODULE__, [hibernate_after: 5_000], :exchange, data)
+  end
+
   def init(ref, trans, opts) do
     Process.flag(:trap_exit, true)
     Helpers.set_max_heap_size(90)

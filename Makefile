@@ -3,7 +3,7 @@ help:
 
 .PHONY: dev
 dev:
-	MIX_ENV=dev \
+	MIX_ENV=prod \
 	VAULT_ENC_KEY="aHD8DZRdk2emnkdktFZRh3E9RNg4aOY7" \
 	API_JWT_SECRET=dev \
 	METRICS_JWT_SECRET=dev \
